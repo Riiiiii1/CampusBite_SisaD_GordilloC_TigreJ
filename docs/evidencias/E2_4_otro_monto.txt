@@ -1,0 +1,1 @@
+﻿RECHAZADO en 15 ms -> El pedido P-002 ya tiene un pago con un monto distinto (4.00)

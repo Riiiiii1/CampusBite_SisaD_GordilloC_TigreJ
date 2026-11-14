@@ -1,0 +1,1 @@
+﻿PAGOS NO DISPONIBLE -> ConnectException: el cliente debe responder de forma controlada (p. ej. PENDIENTE_PAGO)
