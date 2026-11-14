@@ -8,10 +8,15 @@ public final class ConfiguracionRmi {
 
     public static final String HOST = "localhost";
 
-    public static final int PUERTO_PAGOS = 1099;
-    public static final int PUERTO_COCINA = 1100;
-    public static final int PUERTO_NOTIFICACIONES = 1101;
-    public static final int PUERTO_ADMINISTRACION = 1102;
+    // Registros RMI (uno por servicio, cada uno en su JVM)
+    public static final int PUERTO_PAGOS = 1101;
+    public static final int PUERTO_COCINA = 1102;
+    public static final int PUERTO_ADMINISTRACION = 1103;
+    public static final int PUERTO_NOTIFICACIONES = 1104;
+
+    // HTTP: Pedidos (REST) 8080, WebSocket de Notificaciones 8081
+    public static final int HTTP_PAGOS = 8082;
+    public static final int HTTP_ADMINISTRACION = 8083;
 
     private ConfiguracionRmi() {
     }
