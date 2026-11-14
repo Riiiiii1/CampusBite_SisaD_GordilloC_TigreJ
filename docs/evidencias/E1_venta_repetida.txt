@@ -1,0 +1,3 @@
+﻿Primer envio  -> nueva = true  (esperado: true)
+Segundo envio -> nueva = false  (esperado: false)
+Estadisticas: EstadisticasVentas[cantidadVentas=1, totalVendido=5.00, ticketPromedio=5.00]

@@ -1,0 +1,5 @@
+﻿Llamadas simultaneas        : 20
+Pagos distintos creados     : 1  (esperado: 1)
+Facturas distintas emitidas : 1  (esperado: 1)
+Respuestas marcadas repetido: 19  (esperado: 19)
+Resultado E1                : OK

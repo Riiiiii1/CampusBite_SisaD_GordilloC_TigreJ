@@ -1,0 +1,1 @@
+﻿SIN RESPUESTA tras 3012 ms -> UnmarshalException (causa: SocketTimeoutException)
