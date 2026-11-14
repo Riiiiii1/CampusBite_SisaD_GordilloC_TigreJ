@@ -8,15 +8,16 @@ import java.rmi.RemoteException;
 
 /**
  * Contrato RMI del Servicio de Administracion (estadisticas de ventas).
- * Lo llama Pagos despues de confirmar un cobro.
  */
 public interface ServicioAdministracion extends Remote {
+
+    // ------------------------------- MODIFICADO DAVID - ORIGINAL JONH -------------------------------
 
     String NOMBRE = "ServicioAdministracion";
 
     /**
      * Registra una venta. Es idempotente por pedidoId: si llega dos veces
-     * (por un reintento de Pagos) se cuenta una sola vez.
+     * se cuenta una sola vez.
      *
      * @return true si la venta era nueva, false si ya estaba registrada.
      */

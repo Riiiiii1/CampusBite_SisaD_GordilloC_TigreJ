@@ -27,11 +27,17 @@ public final class RespuestaHttp {
     }
 
     /** Convierte un texto en una cadena JSON (con comillas y escapes basicos). */
+    // ------------------------------- MODIFICADO DAVID - ORIGINAL JONH -------------------------------
     public static String texto(Object valor) {
         if (valor == null) {
             return "null";
         }
-        String s = valor.toString().replace("\\", "\\\\").replace("\"", "\\\"");
-        return "\"" + s + "\"";
+        StringBuilder s = new StringBuilder("\"");
+        for (char c : valor.toString().toCharArray()) {
+            if (c == '\\' || c == '"') s.append('\\').append(c);
+            else if (c < 0x20) s.append(String.format("\\u%04x", (int) c));
+            else s.append(c);
+        }
+        return s.append('"').toString();
     }
 }

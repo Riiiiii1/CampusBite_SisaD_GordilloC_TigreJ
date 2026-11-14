@@ -4,6 +4,6 @@ import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.Instant;
 
-/** Venta que Pagos reporta a Administracion. */
+// ------------------------------- MODIFICADO DAVID - ORIGINAL JONH -------------------------------
 public record Venta(String pedidoId, BigDecimal monto, Instant fecha) implements Serializable {
 }

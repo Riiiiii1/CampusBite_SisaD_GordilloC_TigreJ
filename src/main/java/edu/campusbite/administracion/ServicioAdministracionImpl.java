@@ -19,17 +19,28 @@ public class ServicioAdministracionImpl implements ServicioAdministracion {
 
     // Metodo ajustado con ayuda de IA (Claude): usa el log compartido; la venta la envia Pedidos (flecha [6]).
     @Override
+    // ------------------------------- MODIFICADO DAVID - ORIGINAL JONH -------------------------------
     public boolean registrarVenta(Venta venta) {
-        boolean nueva = ventasPorPedido.putIfAbsent(venta.pedidoId(), venta) == null;
+        if (venta == null || venta.pedidoId() == null || venta.pedidoId().isBlank()
+                || venta.monto() == null || venta.monto().signum() <= 0 || venta.fecha() == null) {
+            throw new IllegalArgumentException("Venta invalida: requiere pedidoId, monto positivo y fecha");
+        }
+        Venta anterior = ventasPorPedido.putIfAbsent(venta.pedidoId(), venta);
+        if (anterior != null && anterior.monto().compareTo(venta.monto()) != 0) {
+            throw new IllegalArgumentException("El pedido ya tiene una venta con otro monto");
+        }
+        boolean nueva = anterior == null;
         Registro.info("ADMIN", (nueva ? "VENTA registrada " : "VENTA repetida ignorada ")
                 + venta.pedidoId() + " por $" + venta.monto());
         return nueva;
     }
 
     @Override
+    // ------------------------------- MODIFICADO DAVID - ORIGINAL JONH -------------------------------
     public EstadisticasVentas obtenerEstadisticas() {
-        long cantidad = ventasPorPedido.size();
-        BigDecimal total = ventasPorPedido.values().stream()
+        List<Venta> ventas = listarVentas();
+        long cantidad = ventas.size();
+        BigDecimal total = ventas.stream()
                 .map(Venta::monto)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal promedio = cantidad == 0

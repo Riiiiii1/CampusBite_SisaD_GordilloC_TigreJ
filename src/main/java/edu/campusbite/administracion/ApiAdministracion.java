@@ -39,6 +39,8 @@ public class ApiAdministracion {
     }
 
     private void estadisticas(HttpExchange ex) throws IOException {
+        // ------------------------------- MODIFICADO DAVID - ORIGINAL JONH -------------------------------
+        if (!soloGet(ex)) return;
         EstadisticasVentas e = servicio.obtenerEstadisticas();
         json(ex, 200, "{\"cantidadVentas\":" + e.cantidadVentas()
                 + ",\"totalVendido\":" + e.totalVendido().toPlainString()
@@ -46,6 +48,8 @@ public class ApiAdministracion {
     }
 
     private void ventas(HttpExchange ex) throws IOException {
+        // ------------------------------- MODIFICADO DAVID - ORIGINAL JONH -------------------------------
+        if (!soloGet(ex)) return;
         List<Venta> ventas = servicio.listarVentas();
         ventas.sort(Comparator.comparing(Venta::fecha));
         json(ex, 200, ventas.stream()
@@ -53,5 +57,13 @@ public class ApiAdministracion {
                         + ",\"monto\":" + v.monto().toPlainString()
                         + ",\"fecha\":" + texto(v.fecha()) + "}")
                 .collect(Collectors.joining(",", "[", "]")));
+    }
+
+    // ------------------------------- MODIFICADO DAVID - ORIGINAL JONH -------------------------------
+    private boolean soloGet(HttpExchange ex) throws IOException {
+        if ("GET".equals(ex.getRequestMethod())) return true;
+        ex.getResponseHeaders().set("Allow", "GET");
+        edu.campusbite.common.http.RespuestaHttp.error(ex, 405, "Use GET");
+        return false;
     }
 }

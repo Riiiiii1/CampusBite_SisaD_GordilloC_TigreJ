@@ -53,6 +53,11 @@ public class ServicioPagosImpl implements ServicioPagos {
         long duracion = System.currentTimeMillis() - inicio;
 
         if (!esNuevo.get()) {
+            // ------------------------------- MODIFICADO DAVID - ORIGINAL JONH -------------------------------
+            String metodo = solicitud.metodoPago() == null ? "EFECTIVO" : solicitud.metodoPago();
+            if (!comprobante.metodoPago().equals(metodo)) {
+                throw new OperacionRechazadaException("El pedido ya tiene un pago con otro metodo");
+            }
             if (comprobante.monto().compareTo(solicitud.monto()) != 0) {
                 Registro.info(SERVICIO, "CONFLICTO " + pedidoId + ": ya pagado con " + comprobante.monto()
                         + ", se pidio " + solicitud.monto());
