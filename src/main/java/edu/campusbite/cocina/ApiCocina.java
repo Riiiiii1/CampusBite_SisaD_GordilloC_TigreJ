@@ -3,13 +3,16 @@ package edu.campusbite.cocina;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import edu.campusbite.common.dto.PedidoCocina;
 import edu.campusbite.common.rmi.OperacionRechazadaException;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.rmi.RemoteException;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 import static edu.campusbite.common.http.RespuestaHttp.error;
 import static edu.campusbite.common.http.RespuestaHttp.json;
@@ -44,6 +47,7 @@ public class ApiCocina {
 
         server = HttpServer.create(new InetSocketAddress(puerto), 0);
         server.createContext(PREFIJO, this::marcarListo);
+        server.createContext("/cocina/pedidos", this::listarPedidos);
 
         executor = Executors.newFixedThreadPool(4);
         server.setExecutor(executor);
@@ -59,6 +63,48 @@ public class ApiCocina {
             executor.shutdownNow();
             executor = null;
         }
+    }
+
+    private void listarPedidos(HttpExchange ex) throws IOException {
+        agregarCORS(ex);
+
+        if ("OPTIONS".equalsIgnoreCase(ex.getRequestMethod())) {
+            ex.getResponseHeaders().set(
+                    "Access-Control-Allow-Methods", "GET, OPTIONS");
+            ex.getResponseHeaders().set(
+                    "Access-Control-Allow-Headers", "Content-Type");
+            ex.getResponseHeaders().set(
+                    "Access-Control-Max-Age", "600");
+            ex.sendResponseHeaders(204, -1);
+            ex.close();
+            return;
+        }
+
+        if (!soloMetodo(ex, "GET")) {
+            return;
+        }
+
+        List<ServicioCocinaImpl.PedidoResumen> pedidos =
+                servicio.listarPedidos();
+
+        String contenido = pedidos.stream()
+                .map(ApiCocina::aJson)
+                .collect(Collectors.joining(",", "[", "]"));
+
+        json(ex, 200, contenido);
+    }
+
+    private static String aJson(
+            ServicioCocinaImpl.PedidoResumen resumen) {
+        PedidoCocina pedido = resumen.pedido();
+
+        return "{\"pedidoId\":" + texto(pedido.pedidoId())
+                + ",\"estudianteId\":" + texto(pedido.estudianteId())
+                + ",\"descripcion\":" + texto(pedido.descripcion())
+                + ",\"montos\":" + pedido.montos().toPlainString()
+                + ",\"creadoEn\":" + texto(pedido.creadoEn().toString())
+                + ",\"estado\":" + texto(resumen.estado())
+                + "}";
     }
 
     private void marcarListo(HttpExchange ex) throws IOException {

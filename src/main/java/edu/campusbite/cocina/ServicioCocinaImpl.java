@@ -14,6 +14,8 @@ import java.rmi.NotBoundException;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.time.Instant;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -157,6 +159,23 @@ public class ServicioCocinaImpl implements ServicioCocina {
                 && primero.montos().compareTo(segundo.montos()) == 0
                 && Objects.equals(primero.creadoEn(), segundo.creadoEn());
     }
+
+    public List<PedidoResumen> listarPedidos() {
+        return pedidos.values().stream()
+                .map(pedido -> {
+                    synchronized (pedido) {
+                        String estado = pedido.estadoConfirmado
+                                ? "LISTO"
+                                : "RECIBIDO";
+                        return new PedidoResumen(pedido.pedido, estado);
+                    }
+                })
+                .sorted(Comparator.comparing(
+                        resumen -> resumen.pedido().creadoEn()))
+                .toList();
+    }
+
+    public record PedidoResumen(PedidoCocina pedido, String estado) { }
 
     public record ResultadoListo(boolean cambioEstado, String eventoId) { }
 
