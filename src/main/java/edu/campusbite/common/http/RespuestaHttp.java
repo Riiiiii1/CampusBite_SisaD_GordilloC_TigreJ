@@ -26,7 +26,7 @@ public final class RespuestaHttp {
         json(ex, estado, "{\"error\":" + texto(mensaje) + "}");
     }
 
-    /** Convierte un texto en una cadena JSON (con comillas y escapes basicos). */
+
     // ------------------------------- MODIFICADO DAVID - ORIGINAL JONH -------------------------------
     public static String texto(Object valor) {
         if (valor == null) {

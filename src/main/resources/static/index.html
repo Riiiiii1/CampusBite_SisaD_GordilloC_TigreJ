@@ -111,6 +111,9 @@
         <button id="consultar" type="button" disabled>
             Consultar estado
         </button>
+        <button id="reintentar" type="button" hidden disabled>
+            Reintentar envío a Cocina
+        </button>
 
         <button id="listo" type="button" disabled>
             Marcar como listo (Cocina)
@@ -138,15 +141,29 @@
 
     const botonCrear = document.getElementById("crear");
     const botonConsultar = document.getElementById("consultar");
+    const botonReintentar = document.getElementById("reintentar");
     const botonListo = document.getElementById("listo");
     const botonNuevo = document.getElementById("nuevo");
 
+    const claveEnvioPendiente = "campusbite.envioPendiente";
+
     let pedidoActual = localStorage.getItem("campusbite.pedidoId");
-    let formularioBloqueado = Boolean(pedidoActual);
+    let envioPendiente = null;
+    let ultimoPedido = null;
     let consultaFinalRealizada = false;
-    let listoSolicitado = false;
+    let marcandoListo = false;
+    let reintentandoPedido = false;
+    let versionConsulta = 0;
     let socket;
     let temporizadorReconexion;
+
+    try {
+        envioPendiente = JSON.parse(
+            sessionStorage.getItem(claveEnvioPendiente)
+        );
+    } catch (_) {
+        sessionStorage.removeItem(claveEnvioPendiente);
+    }
 
     campoMonto.addEventListener("input", () => {
         let valor = campoMonto.value.replace(/\./g, ",");
@@ -181,39 +198,118 @@
         mensaje.textContent = texto;
     }
 
-    function bloquearFormulario(bloqueado) {
-        formularioBloqueado = bloqueado;
+    function claveAvisoPendiente(id) {
+        return `campusbite.avisoPendiente.${id}`;
+    }
 
-        formulario
-            .querySelectorAll("input, textarea, select")
-            .forEach((campo) => {
-                campo.disabled = bloqueado;
-            });
+    function actualizarFormulario() {
+        if (envioPendiente && !pedidoActual) {
+            estudianteId.value = envioPendiente.datos.estudianteId;
+            descripcion.value = envioPendiente.datos.descripcion;
+            campoMonto.value = String(
+                envioPendiente.datos.monto
+            ).replace(".", ",");
+            metodoPago.value = envioPendiente.datos.metodoPago;
+        }
 
-        botonCrear.disabled = bloqueado;
+        const hayPedido = Boolean(pedidoActual);
+        const envioSinConfirmar = Boolean(envioPendiente && !pedidoActual);
+
+        estudianteId.disabled = hayPedido;
+        descripcion.disabled = hayPedido;
+        campoMonto.disabled = hayPedido;
+        metodoPago.disabled = hayPedido || envioSinConfirmar;
+
+        estudianteId.readOnly = envioSinConfirmar;
+        descripcion.readOnly = envioSinConfirmar;
+        campoMonto.readOnly = envioSinConfirmar;
+
+        botonCrear.disabled = hayPedido;
+        botonCrear.textContent = envioSinConfirmar
+            ? "Intentar de nuevo"
+            : "Crear pedido";
+    }
+
+    function actualizarAcciones(pedido) {
+        if (!pedido) {
+            botonConsultar.disabled = true;
+            botonReintentar.hidden = true;
+            botonReintentar.disabled = true;
+            botonListo.disabled = true;
+            botonNuevo.disabled = true;
+            return;
+        }
+
+        const pago = pedido.estadoPago;
+        const preparacion = pedido.estadoPreparacion;
+
+        const rechazado =
+            pago === "RECHAZADO"
+            || preparacion === "RECHAZADO";
+
+        const finalizado =
+            preparacion === "LISTO"
+            || rechazado;
+
+        const pendiente =
+            pago === "PENDIENTE_PAGO"
+            || !pedido.ventaRegistrada
+            || preparacion === "PENDIENTE_ENVIO";
+
+        const avisoPendiente =
+            sessionStorage.getItem(
+                claveAvisoPendiente(pedido.id)
+            ) !== null;
+
+        const puedeMarcar =
+            pago === "PAGADO"
+            && preparacion === "RECIBIDO";
+
+        botonConsultar.disabled = consultaFinalRealizada;
+
+        botonReintentar.hidden = rechazado || !pendiente;
+        botonReintentar.disabled =
+            botonReintentar.hidden
+            || pedido.procesando
+            || reintentandoPedido;
+
+        botonListo.textContent = avisoPendiente
+            ? "Reintentar actualización de Cocina"
+            : "Marcar como listo (Cocina)";
+
+        botonListo.disabled =
+            marcandoListo
+            || (!puedeMarcar && !avisoPendiente);
+
+        botonNuevo.disabled =
+            !finalizado || avisoPendiente;
     }
 
     function mostrarPedido(pedido) {
-        const preparacion = pedido.estadoPreparacion ?? "SIN ESTADO";
+        ultimoPedido = pedido;
+
+        if (pedido.solicitud) {
+            estudianteId.value =
+                pedido.solicitud.estudianteId ?? "";
+            descripcion.value =
+                pedido.solicitud.descripcion ?? "";
+            campoMonto.value = String(
+                pedido.solicitud.monto ?? ""
+            ).replace(".", ",");
+            metodoPago.value =
+                pedido.solicitud.metodoPago ?? "EFECTIVO";
+        }
+
         const pago = pedido.estadoPago ?? "SIN ESTADO";
+        const preparacion =
+            pedido.estadoPreparacion ?? "SIN ESTADO";
 
         detalle.textContent =
             `Pedido: ${pedido.id}\n`
             + `Pago: ${pago}\n`
             + `Preparación: ${preparacion}`;
 
-        const finalizado =
-            preparacion === "LISTO"
-            || pago === "RECHAZADO"
-            || preparacion === "RECHAZADO";
-
-        botonConsultar.disabled = consultaFinalRealizada;
-        botonListo.disabled =
-            listoSolicitado
-            || pago !== "PAGADO"
-            || preparacion !== "RECIBIDO";
-
-        botonNuevo.disabled = !finalizado;
+        actualizarAcciones(pedido);
     }
 
     async function leerJson(respuesta) {
@@ -232,6 +328,7 @@
     }
 
     function limpiarPedidoAnterior() {
+        ++versionConsulta;
         clearTimeout(temporizadorReconexion);
 
         if (socket) {
@@ -240,18 +337,26 @@
             socket = null;
         }
 
-        pedidoActual = null;
-        consultaFinalRealizada = false;
-        listoSolicitado = false;
-        localStorage.removeItem("campusbite.pedidoId");
+        if (pedidoActual) {
+            sessionStorage.removeItem(
+                claveAvisoPendiente(pedidoActual)
+            );
+        }
 
-        bloquearFormulario(false);
-        detalle.textContent = "Todavía no has creado un pedido.";
+        pedidoActual = null;
+        ultimoPedido = null;
+        consultaFinalRealizada = false;
+
+        localStorage.removeItem("campusbite.pedidoId");
+        sessionStorage.removeItem(claveEnvioPendiente);
+        envioPendiente = null;
+
+        detalle.textContent =
+            "Todavía no has creado un pedido.";
         mostrarMensaje("");
 
-        botonConsultar.disabled = true;
-        botonListo.disabled = true;
-        botonNuevo.disabled = true;
+        actualizarFormulario();
+        actualizarAcciones(null);
     }
 
     async function consultarEstado(consultaManual = false) {
@@ -259,11 +364,21 @@
             return;
         }
 
+        const id = pedidoActual;
+        const version = ++versionConsulta;
+
         try {
             const respuesta = await fetch(
-                `${API_PEDIDOS}/${encodeURIComponent(pedidoActual)}`,
-                { cache: "no-store" }
+                `${API_PEDIDOS}/${encodeURIComponent(id)}`,
+                {
+                    cache: "no-store",
+                    signal: AbortSignal.timeout(5000)
+                }
             );
+
+            if (id !== pedidoActual || version !== versionConsulta) {
+                return;
+            }
 
             if (respuesta.status === 404) {
                 limpiarPedidoAnterior();
@@ -275,7 +390,9 @@
 
             if (consultaManual) {
                 if (pedido.estadoPreparacion === "LISTO") {
-                    mostrarMensaje("Cocina marcó el pedido como listo. Gracias por su visita.");
+                    mostrarMensaje(
+                        "Cocina marcó el pedido como listo. Gracias por su visita."
+                    );
                     consultaFinalRealizada = true;
                     botonConsultar.disabled = true;
                 } else {
@@ -285,9 +402,17 @@
                 }
             }
         } catch (error) {
-            mostrarMensaje(
-                `No se pudo consultar Pedidos: ${error.message}`
-            );
+            if (id === pedidoActual && version === versionConsulta) {
+                const sinConexion =
+                    error instanceof TypeError
+                    || error.name === "TimeoutError";
+
+                mostrarMensaje(
+                    sinConexion
+                        ? "No hay conexión con Pedidos. Inténtalo de nuevo."
+                        : `No se pudo consultar tu pedido: ${error.message}`
+                );
+            }
         }
     }
 
@@ -301,24 +426,34 @@
             socket.close();
         }
 
+        const id = pedidoActual;
+
         socket = new WebSocket(
-            WS_NOTIFICACIONES + encodeURIComponent(pedidoActual)
+            WS_NOTIFICACIONES + encodeURIComponent(id)
         );
 
         socket.onopen = () => {
+            if (id !== pedidoActual) {
+                return;
+            }
+
             if (!mensaje.textContent) {
-                mostrarMensaje("Conectado a las notificaciones.");
+                mostrarMensaje(
+                    "Conectado a las notificaciones."
+                );
             }
 
             consultarEstado();
         };
 
         socket.onmessage = () => {
-            consultarEstado();
+            if (id === pedidoActual) {
+                consultarEstado();
+            }
         };
 
         socket.onclose = () => {
-            if (pedidoActual) {
+            if (id === pedidoActual) {
                 clearTimeout(temporizadorReconexion);
                 temporizadorReconexion =
                     setTimeout(conectarWebSocket, 2000);
@@ -335,14 +470,17 @@
         consultarEstado();
     }
 
-    formulario.addEventListener("submit", async (evento) => {
-        evento.preventDefault();
-        botonCrear.disabled = true;
+    function prepararEnvio() {
+        if (envioPendiente) {
+            return envioPendiente;
+        }
 
-        const solicitud = {
+        const datos = {
             estudianteId: estudianteId.value.trim(),
             descripcion: descripcion.value.trim(),
-            monto: Number(campoMonto.value.replace(",", ".")),
+            monto: Number(
+                campoMonto.value.replace(",", ".")
+            ),
             metodoPago: metodoPago.value
         };
 
@@ -350,32 +488,89 @@
             ? crypto.randomUUID()
             : `pedido-${Date.now()}-${Math.random()}`;
 
+        const envio = { clave, datos };
+
+        sessionStorage.setItem(
+            claveEnvioPendiente,
+            JSON.stringify(envio)
+        );
+
+        envioPendiente = envio;
+        return envio;
+    }
+
+    function confirmarEnvio() {
+        sessionStorage.removeItem(claveEnvioPendiente);
+        envioPendiente = null;
+    }
+
+    formulario.addEventListener("submit", async (evento) => {
+        evento.preventDefault();
+
+        if (botonCrear.disabled) {
+            return;
+        }
+
+        botonCrear.disabled = true;
+
         try {
+            const envio = prepararEnvio();
+            actualizarFormulario();
+
             const respuesta = await fetch(API_PEDIDOS, {
                 method: "POST",
+                signal: AbortSignal.timeout(15000),
                 headers: {
                     "Content-Type": "application/json",
-                    "Idempotency-Key": clave
+                    "Idempotency-Key": envio.clave
                 },
-                body: JSON.stringify(solicitud)
+                body: JSON.stringify(envio.datos)
             });
 
-            const pedido = await leerJson(respuesta);
+            if (respuesta.status === 400
+                || respuesta.status === 409) {
+                confirmarEnvio();
+            }
+
+            const pedido = respuesta.status === 422
+                ? await respuesta.json()
+                : await leerJson(respuesta);
+
+            if (typeof pedido.id !== "string" || !pedido.id) {
+                throw new Error(
+                    "La respuesta no contiene el identificador del pedido"
+                );
+            }
+
             pedidoActual = pedido.id;
             consultaFinalRealizada = false;
-            listoSolicitado = false;
-            localStorage.setItem("campusbite.pedidoId", pedidoActual);
 
-            bloquearFormulario(true);
+            localStorage.setItem(
+                "campusbite.pedidoId",
+                pedidoActual
+            );
+
+            confirmarEnvio();
+            actualizarFormulario();
             mostrarPedido(pedido);
             mostrarMensaje("");
             iniciarSeguimiento();
         } catch (error) {
-            mostrarMensaje(
-                `No se pudo crear el pedido: ${error.message}`
-            );
+            const sinConexion =
+                error instanceof TypeError
+                || error.name === "TimeoutError";
+
+            if (sinConexion && envioPendiente) {
+                mostrarMensaje(
+                    "No hay conexión. Pulsa «Intentar de nuevo»."
+                );
+            } else {
+                mostrarMensaje(
+                    `No pudimos crear tu pedido: ${error.message}`
+                );
+            }
         } finally {
-            botonCrear.disabled = formularioBloqueado;
+            actualizarFormulario();
         }
     });
 
@@ -383,28 +578,86 @@
         consultarEstado(true);
     });
 
-    botonListo.addEventListener("click", async () => {
-        if (!pedidoActual) {
+    botonReintentar.addEventListener("click", async () => {
+        if (!pedidoActual || botonReintentar.disabled) {
             return;
         }
 
-        botonListo.disabled = true;
+        const id = pedidoActual;
+        reintentandoPedido = true;
+        actualizarAcciones(ultimoPedido);
 
         try {
             const respuesta = await fetch(
-                `${API_COCINA}/${encodeURIComponent(pedidoActual)}/listo`,
-                { method: "POST" }
+                `${API_PEDIDOS}/${encodeURIComponent(id)}/reintentar`,
+                {
+                    method: "POST",
+                    signal: AbortSignal.timeout(15000)
+                }
+            );
+
+            const pedido = respuesta.status === 422
+                ? await respuesta.json()
+                : await leerJson(respuesta);
+
+            if (id === pedidoActual && pedido.id === id) {
+                ++versionConsulta;
+                mostrarPedido(pedido);
+            }
+        } catch (error) {
+            if (id === pedidoActual) {
+                mostrarMensaje(
+                    `No se pudo reintentar el pedido: ${error.message}`
+                );
+            }
+        } finally {
+            reintentandoPedido = false;
+
+            if (ultimoPedido) {
+                actualizarAcciones(ultimoPedido);
+            }
+        }
+    });
+
+    botonListo.addEventListener("click", async () => {
+        if (!pedidoActual || botonListo.disabled) {
+            return;
+        }
+
+        const id = pedidoActual;
+        const claveAviso = claveAvisoPendiente(id);
+
+        marcandoListo = true;
+        sessionStorage.setItem(claveAviso, "true");
+        actualizarAcciones(ultimoPedido);
+
+        try {
+            const respuesta = await fetch(
+                `${API_COCINA}/${encodeURIComponent(id)}/listo`,
+                {
+                    method: "POST",
+                    signal: AbortSignal.timeout(15000)
+                }
             );
 
             await leerJson(respuesta);
-            listoSolicitado = true;
-            await consultarEstado();
+            sessionStorage.removeItem(claveAviso);
         } catch (error) {
-            listoSolicitado = false;
-            botonListo.disabled = false;
-            mostrarMensaje(
-                `No se pudo marcar como listo: ${error.message}`
-            );
+            if (id === pedidoActual) {
+                mostrarMensaje(
+                    `No se confirmó la actualización de Cocina: ${error.message}. Puedes reintentar.`
+                );
+            }
+        } finally {
+            marcandoListo = false;
+
+            if (id === pedidoActual) {
+                await consultarEstado();
+            }
+
+            if (ultimoPedido) {
+                actualizarAcciones(ultimoPedido);
+            }
         }
     });
 
@@ -415,9 +668,12 @@
         estudianteId.focus();
     });
 
+    actualizarFormulario();
+
     if (pedidoActual) {
-        bloquearFormulario(true);
         iniciarSeguimiento();
+    } else {
+        actualizarAcciones(null);
     }
 </script>
 </body>

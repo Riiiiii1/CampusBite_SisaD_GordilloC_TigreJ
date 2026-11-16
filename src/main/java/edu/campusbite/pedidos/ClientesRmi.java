@@ -18,8 +18,7 @@ public class ClientesRmi {
 
 
     // GENERADO CON IA (CLAUDE) : Autocompletar usando campusbite.rmi.host → localhost, campusbite.rmi.pagos → 1101
-    // .etc y añadiendo la etiqueta VALUE. Para la configuración del RMI pasale parametros de conexion y respuesta
-    // desconozco la nomenclatura.
+    // .etc y añadiendo la etiqueta VALUE
     public ClientesRmi(@Value("${campusbite.rmi.host:localhost}") String host,
                        @Value("${campusbite.rmi.pagos:1101}") int puertoPagos,
                        @Value("${campusbite.rmi.administracion:1103}") int puertoAdministracion,
