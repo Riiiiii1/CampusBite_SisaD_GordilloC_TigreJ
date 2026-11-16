@@ -1,0 +1,21 @@
+Comandos y resultados transcritos de PowerShell durante E4:
+
+PS> Invoke-RestMethod -Method Post -Uri "http://localhost:8084/cocina/pedidos/e7f55dbb-c7df-405e-bc8c-8f796615960f/listo"
+
+pedidoId                             estado estadoCambio eventoId
+--------                             ------ ------------ --------
+e7f55dbb-c7df-405e-bc8c-8f796615960f LISTO True LISTO:e7f55dbb-c7df-405e-bc8c-8f796615960f
+
+PS> Invoke-RestMethod -Uri "http://localhost:8080/pedidos/e7f55dbb-c7df-405e-bc8c-8f796615960f"
+
+id                : e7f55dbb-c7df-405e-bc8c-8f796615960f
+solicitud         : @{estudianteId=prueba-desconexion-01; descripcion=prueba-desconexion-01; monto=4,5; metodoPago=EFECTIVO}
+estadoPago        : PAGADO
+ventaRegistrada   : True
+procesando        : False
+detalle           : Pago y venta registrados
+comprobante       : @{pedidoId=e7f55dbb-c7df-405e-bc8c-8f796615960f; pagoId=PAG-3; numeroFactura=001-001-000000003; monto=4,5; metodoPago=EFECTIVO;
+                    fecha=2026-11-16T02:40:05.552829500Z; repetido=False}
+creadoEn          : 2026-11-16T02:40:05.552829500Z
+estadoPreparacion : LISTO
+detalleCocina     : Cocina confirmo que el pedido esta listo
