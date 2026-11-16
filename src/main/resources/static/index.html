@@ -99,6 +99,10 @@
             Consultar estado
         </button>
 
+        <button id="reintentar" type="button" hidden disabled>
+            Reintentar procesamiento
+        </button>
+
         <button id="listo" type="button" disabled>
             Marcar como listo (Cocina)
         </button>
@@ -116,8 +120,16 @@
     const botonCrear = document.getElementById("crear");
     const botonConsultar = document.getElementById("consultar");
     const botonListo = document.getElementById("listo");
+    const botonReintentar = document.getElementById("reintentar");
+    const camposPedido = formulario.querySelectorAll("input, textarea, select");
+    const claveEnvioPendiente = "campusbite.envioPendiente";
 
     let pedidoActual = localStorage.getItem("campusbite.pedidoId");
+    let envioPendiente = JSON.parse(sessionStorage.getItem(claveEnvioPendiente));
+    let ultimoPedido = null;
+    let marcandoListo = false;
+    let reintentandoPedido = false;
+    let versionConsulta = 0;
     let socket;
     let temporizadorReconexion;
     let temporizadorConsulta;
@@ -127,6 +139,7 @@
     }
 
     function mostrarPedido(pedido) {
+      ultimoPedido = pedido;
       const preparacion = pedido.estadoPreparacion ?? "SIN ESTADO";
       const pago = pedido.estadoPago ?? "SIN ESTADO";
 
@@ -134,8 +147,24 @@
         `Pedido: ${pedido.id} | Pago: ${pago} | Preparación: ${preparacion}`;
 
       botonConsultar.disabled = false;
-      botonListo.disabled =
-        pago !== "PAGADO" || preparacion !== "RECIBIDO";
+      actualizarAcciones(pedido);
+    }
+
+    function claveAvisoPendiente(pedidoId) {
+      return `campusbite.avisoPendiente.${pedidoId}`;
+    }
+
+    function actualizarAcciones(pedido) {
+      const avisoPendiente = sessionStorage.getItem(claveAvisoPendiente(pedido.id)) !== null;
+      const puedeMarcar = pedido.estadoPago === "PAGADO" && pedido.estadoPreparacion === "RECIBIDO";
+      botonListo.textContent = avisoPendiente ? "Reintentar actualización de Cocina" : "Marcar como listo (Cocina)";
+      botonListo.disabled = marcandoListo || (!puedeMarcar && !avisoPendiente);
+
+      const rechazado = pedido.estadoPago === "RECHAZADO" || pedido.estadoPreparacion === "RECHAZADO";
+      const pendiente = pedido.estadoPago === "PENDIENTE_PAGO"
+        || !pedido.ventaRegistrada || pedido.estadoPreparacion === "PENDIENTE_ENVIO";
+      botonReintentar.hidden = rechazado || !pendiente;
+      botonReintentar.disabled = botonReintentar.hidden || pedido.procesando || reintentandoPedido;
     }
 
     async function leerJson(respuesta) {
@@ -153,17 +182,21 @@
 
     async function consultarEstado() {
       if (!pedidoActual) return;
+      const id = pedidoActual;
+      const version = ++versionConsulta;
 
       try {
         const respuesta = await fetch(
-          `${API_PEDIDOS}/${encodeURIComponent(pedidoActual)}`,
-          { cache: "no-store" }
+          `${API_PEDIDOS}/${encodeURIComponent(id)}`,
+          { cache: "no-store", signal: AbortSignal.timeout(5000) }
         );
 
         const pedido = await leerJson(respuesta);
-        mostrarPedido(pedido);
+        if (id === pedidoActual && version === versionConsulta) mostrarPedido(pedido);
       } catch (error) {
-        mostrarMensaje(`No se pudo consultar Pedidos: ${error.message}`);
+        if (id === pedidoActual && version === versionConsulta) {
+          mostrarMensaje(`No se pudo consultar Pedidos: ${error.message}`);
+        }
       }
     }
 
@@ -218,12 +251,10 @@
       temporizadorConsulta = setInterval(consultarEstado, 3000);
     }
 
-    formulario.addEventListener("submit", async (evento) => {
-      evento.preventDefault();
-      botonCrear.disabled = true;
-      mostrarMensaje("Creando pedido…");
+    function prepararEnvio() {
+      if (envioPendiente) return envioPendiente;
 
-      const solicitud = {
+      const datos = {
         estudianteId: document.getElementById("estudianteId").value.trim(),
         descripcion: document.getElementById("descripcion").value.trim(),
         monto: Number(document.getElementById("monto").value),
@@ -233,56 +264,127 @@
       const clave = crypto.randomUUID
         ? crypto.randomUUID()
         : `pedido-${Date.now()}-${Math.random()}`;
+      const envio = { clave, datos };
+      sessionStorage.setItem(claveEnvioPendiente, JSON.stringify(envio));
+      envioPendiente = envio;
+      return envio;
+    }
+
+    function actualizarFormulario() {
+      for (const campo of camposPedido) {
+        if (envioPendiente) campo.value = envioPendiente.datos[campo.id];
+        campo.readOnly = Boolean(envioPendiente);
+        if (campo.tagName === "SELECT") campo.disabled = Boolean(envioPendiente);
+      }
+      botonCrear.textContent = envioPendiente ? "Reintentar creación" : "Crear pedido";
+    }
+
+    function confirmarEnvio() {
+      sessionStorage.removeItem(claveEnvioPendiente);
+      envioPendiente = null;
+    }
+
+    formulario.addEventListener("submit", async (evento) => {
+      evento.preventDefault();
+      if (botonCrear.disabled) return;
+      botonCrear.disabled = true;
+      mostrarMensaje("Enviando pedido…");
 
       try {
+        const envio = prepararEnvio();
+        actualizarFormulario();
         const respuesta = await fetch(API_PEDIDOS, {
           method: "POST",
+          signal: AbortSignal.timeout(15000),
           headers: {
             "Content-Type": "application/json",
-            "Idempotency-Key": clave
+            "Idempotency-Key": envio.clave
           },
-          body: JSON.stringify(solicitud)
+          body: JSON.stringify(envio.datos)
         });
 
-        const pedido = await leerJson(respuesta);
+        if (respuesta.status === 400 || respuesta.status === 409) confirmarEnvio();
+        const pedido = respuesta.status === 422 ? await respuesta.json() : await leerJson(respuesta);
+        if (typeof pedido.id !== "string" || !pedido.id) {
+          throw new Error("La respuesta no contiene el identificador del pedido");
+        }
         pedidoActual = pedido.id;
         localStorage.setItem("campusbite.pedidoId", pedidoActual);
+        confirmarEnvio();
 
         mostrarPedido(pedido);
-        mostrarMensaje("Pedido creado. Consultando su estado…");
+        mostrarMensaje(pedido.detalleCocina && pedido.estadoPreparacion === "RECHAZADO"
+          ? pedido.detalleCocina : (pedido.detalle || "Pedido registrado."));
         iniciarSeguimiento();
       } catch (error) {
-        mostrarMensaje(`No se pudo crear el pedido: ${error.message}`);
+        const indicacion = envioPendiente ? " Puedes reintentar la misma solicitud." : "";
+        mostrarMensaje(`No se pudo confirmar la creación: ${error.message}.${indicacion}`);
       } finally {
+        actualizarFormulario();
         botonCrear.disabled = false;
       }
     });
 
     botonConsultar.addEventListener("click", consultarEstado);
 
-    botonListo.addEventListener("click", async () => {
-      if (!pedidoActual) return;
+    botonReintentar.addEventListener("click", async () => {
+      if (!pedidoActual || botonReintentar.disabled) return;
+      const id = pedidoActual;
+      reintentandoPedido = true;
+      actualizarAcciones(ultimoPedido);
 
-      botonListo.disabled = true;
+      try {
+        const respuesta = await fetch(`${API_PEDIDOS}/${encodeURIComponent(id)}/reintentar`, {
+          method: "POST",
+          signal: AbortSignal.timeout(15000)
+        });
+        const pedido = respuesta.status === 422 ? await respuesta.json() : await leerJson(respuesta);
+        if (id === pedidoActual && pedido.id === id) {
+          ++versionConsulta;
+          mostrarPedido(pedido);
+          mostrarMensaje(pedido.estadoPreparacion === "RECHAZADO"
+            ? pedido.detalleCocina : (pedido.detalle || "Pedido actualizado."));
+        }
+      } catch (error) {
+        if (id === pedidoActual) mostrarMensaje(`No se pudo reintentar el pedido: ${error.message}`);
+      } finally {
+        reintentandoPedido = false;
+        if (ultimoPedido) actualizarAcciones(ultimoPedido);
+      }
+    });
+    // ------------------------------- MODIFICADO DAVID - ORIGINAL ANTHONY -------------------------------
+    // CODIGO GENERADO POR IA (CLAUDE): El pedido podía quedar LISTO y el aviso sin enviar, con el botón bloqueado.
+
+    botonListo.addEventListener("click", async () => {
+      if (!pedidoActual || botonListo.disabled) return;
+      const id = pedidoActual;
+      const claveAviso = claveAvisoPendiente(id);
+      marcandoListo = true;
+      actualizarAcciones(ultimoPedido);
       mostrarMensaje("Enviando la actualización a Pedidos…");
 
       try {
+        sessionStorage.setItem(claveAviso, "true");
         const respuesta = await fetch(
-          `${API_COCINA}/${encodeURIComponent(pedidoActual)}/listo`,
-          { method: "POST" }
+          `${API_COCINA}/${encodeURIComponent(id)}/listo`,
+          { method: "POST", signal: AbortSignal.timeout(15000) }
         );
 
         await leerJson(respuesta);
-        mostrarMensaje("Cocina marcó el pedido como listo.");
-        await consultarEstado();
+        sessionStorage.removeItem(claveAviso);
+        if (id === pedidoActual) mostrarMensaje("Pedido listo. Notificaciones aceptó el aviso.");
       } catch (error) {
-        mostrarMensaje(
-          `No se pudo marcar como listo: ${error.message}. Puedes reintentar.`
-        );
-        await consultarEstado();
+        if (id === pedidoActual) {
+          mostrarMensaje(`No se confirmó la actualización de Cocina: ${error.message}. Puedes reintentar.`);
+        }
+      } finally {
+        if (id === pedidoActual) await consultarEstado();
+        marcandoListo = false;
+        if (ultimoPedido) actualizarAcciones(ultimoPedido);
       }
     });
 
+    actualizarFormulario();
     if (pedidoActual) {
       iniciarSeguimiento();
     }

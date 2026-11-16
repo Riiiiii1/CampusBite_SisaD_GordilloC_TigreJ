@@ -17,7 +17,8 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.locks.ReentrantLock;
 import static edu.campusbite.pedidos.VistaPedido.EstadoPago.*;
 import edu.campusbite.pedidos.VistaPedido.EstadoPreparacion;
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 // --------------------- DAVID ---------
 @Service
 public class ServicioPedidos {
@@ -26,6 +27,9 @@ public class ServicioPedidos {
     private final Semaphore llamadasDisponibles = new Semaphore(8);
     private final ClientesRmi clientes;
     private final boolean cocinaHabilitada;
+
+
+    private static final Logger log = LoggerFactory.getLogger(ServicioPedidos.class);
 
     public ServicioPedidos(ClientesRmi clientes,
                            @Value("${campusbite.cocina.habilitada:false}") boolean cocinaHabilitada) {
@@ -108,6 +112,7 @@ public class ServicioPedidos {
     }
 
     private void procesar(Pedido pedido) {
+
         if (!pedido.bloqueo.tryLock()) return;
         boolean permiso = false;
         try {
@@ -120,38 +125,51 @@ public class ServicioPedidos {
             }
             pedido.actualizar(pedido.vista.estadoPago(), pedido.vista.ventaRegistrada(), true,
                     "Procesando", pedido.vista.comprobante());
+
             if (pedido.vista.comprobante() == null) {
                 SolicitudPedido s = pedido.vista.solicitud();
                 ComprobantePago pago = clientes.pagar(new SolicitudPago(pedido.vista.id(), s.monto(), s.metodoPago()));
                 pedido.actualizar(PAGADO, false, true, "Pago confirmado; registrando venta", pago);
             }
+
             if (!pedido.vista.ventaRegistrada()) {
                 try {
                     clientes.registrarVenta(pedido.vista.comprobante());
                     pedido.actualizar(PAGADO, true, true, "Pago y venta registrados", pedido.vista.comprobante());
-                } catch (RemoteException | NotBoundException | IllegalArgumentException e) {
+                } catch (RemoteException | NotBoundException e) {   // <-- ya NO captura IllegalArgumentException
                     pedido.actualizar(PAGADO, false, true,
                             "Pago confirmado; registro de venta pendiente. Reintente este mismo pedido",
                             pedido.vista.comprobante());
                 }
             }
+
             enviarACocina(pedido);
             pedido.actualizar(pedido.vista.estadoPago(), pedido.vista.ventaRegistrada(), false,
                     pedido.vista.detalle(), pedido.vista.comprobante());
+
         } catch (OperacionRechazadaException e) {
             pedido.actualizar(RECHAZADO, false, false, e.getMessage(), pedido.vista.comprobante());
-        } catch (RemoteException | NotBoundException | IllegalArgumentException e) {
+
+        } catch (RemoteException | NotBoundException e) {
             String detalle = pedido.vista.comprobante() == null
                     ? "Pago sin confirmar: puede haberse realizado. Reintente este mismo pedido"
                     : "Pago confirmado; registro de venta pendiente. Reintente este mismo pedido";
             pedido.actualizar(pedido.vista.estadoPago(), pedido.vista.ventaRegistrada(), false,
                     detalle, pedido.vista.comprobante());
+
+        } catch (RuntimeException e) {
+
+            pedido.actualizar(pedido.vista.estadoPago(), pedido.vista.ventaRegistrada(), false,
+                    "Error interno inesperado; requiere revisión. El comprobante (si existe) se conserva",
+                    pedido.vista.comprobante());
+            log.error("Error inesperado procesando pedido " + pedido.vista.id(), e);
+            throw e;
+
         } finally {
             if (permiso) llamadasDisponibles.release();
             pedido.bloqueo.unlock();
         }
     }
-
     private void enviarACocina(Pedido pedido) {
         if (!cocinaHabilitada || pedido.vista.estadoPreparacion() != EstadoPreparacion.PENDIENTE_ENVIO) return;
         pedido.envioIntentado = true;
