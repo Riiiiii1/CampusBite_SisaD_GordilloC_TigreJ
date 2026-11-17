@@ -1,6 +1,7 @@
 package edu.campusbite.pedidos;
 
 import edu.campusbite.administracion.ServicioAdministracionImpl;
+import edu.campusbite.cocina.ServicioCocinaImpl;
 import edu.campusbite.pagos.ServicioPagosImpl;
 import edu.campusbite.common.dto.Venta;
 import edu.campusbite.common.http.RespuestaHttp;
@@ -24,20 +25,20 @@ import java.util.concurrent.CompletableFuture;
 import static org.junit.jupiter.api.Assertions.*;
 
 // --------------------- DAVID ---------
-@SpringBootTest(
-        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        // Con ayuda de ChatGPT desactivé Cocina solo para esta prueba
-        properties = "campusbite.cocina.habilitada=false"
-)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = "campusbite.cocina.habilitada=true")
 @DirtiesContext
 class IntegracionPedidosTest {
     @LocalServerPort int puertoHttp;
     static Registry registroPagos;
     static Registry registroAdmin;
+    static Registry registroCocina;
     static final ServicioPagosImpl pagos = new ServicioPagosImpl();
     static final ServicioAdministracionImpl admin = new ServicioAdministracionImpl();
+    static final ServicioCocinaImpl cocina = new ServicioCocinaImpl();
     static ServicioPagos stubPagos;
     static ServicioAdministracion stubAdmin;
+    static ServicioCocina stubCocina;
     final HttpClient http = HttpClient.newHttpClient();
     final ObjectMapper json = new ObjectMapper();
     static final String CUERPO = """
@@ -52,12 +53,19 @@ class IntegracionPedidosTest {
         registroPagos = LocateRegistry.createRegistry(puertoPagos);
         int puertoAdmin = puertoLibre();
         registroAdmin = LocateRegistry.createRegistry(puertoAdmin);
+        int puertoCocina = puertoLibre();
+        registroCocina = LocateRegistry.createRegistry(puertoCocina);
+        int puertoEstadoPedidos = puertoLibre();
         stubPagos = (ServicioPagos) UnicastRemoteObject.exportObject(pagos, 0);
         stubAdmin = (ServicioAdministracion) UnicastRemoteObject.exportObject(admin, 0);
+        stubCocina = (ServicioCocina) UnicastRemoteObject.exportObject(cocina, 0);
         registroPagos.rebind(ServicioPagos.NOMBRE, stubPagos);
         registroAdmin.rebind(ServicioAdministracion.NOMBRE, stubAdmin);
+        registroCocina.rebind(ServicioCocina.NOMBRE, stubCocina);
         propiedades.add("campusbite.rmi.pagos", () -> puertoPagos);
         propiedades.add("campusbite.rmi.administracion", () -> puertoAdmin);
+        propiedades.add("campusbite.rmi.cocina", () -> puertoCocina);
+        propiedades.add("campusbite.rmi.estado-pedidos", () -> puertoEstadoPedidos);
     }
 
     static int puertoLibre() throws Exception {
@@ -68,8 +76,10 @@ class IntegracionPedidosTest {
     static void cerrar() throws Exception {
         UnicastRemoteObject.unexportObject(pagos, true);
         UnicastRemoteObject.unexportObject(admin, true);
+        UnicastRemoteObject.unexportObject(cocina, true);
         UnicastRemoteObject.unexportObject(registroPagos, true);
         UnicastRemoteObject.unexportObject(registroAdmin, true);
+        UnicastRemoteObject.unexportObject(registroCocina, true);
     }
 
     HttpRequest post(String ruta, String clave, String cuerpo) {
@@ -106,7 +116,10 @@ class IntegracionPedidosTest {
         assertEquals(ventasAntes + 1, admin.obtenerEstadisticas().cantidadVentas());
         var repetida = enviar(post("/pedidos", clave, CUERPO));
         assertEquals(200, repetida.statusCode());
-        assertEquals(ids.iterator().next(), contenido(repetida).get("id").asString());
+        String id = ids.iterator().next();
+        assertEquals(id, contenido(repetida).get("id").asString());
+        assertEquals("RECIBIDO", contenido(repetida).get("estadoPreparacion").asString());
+        assertEquals(1, cocina.listarPedidos().stream().filter(p -> p.pedido().pedidoId().equals(id)).count());
         assertEquals(409, enviar(post("/pedidos", clave, CUERPO.replace("4.50", "8.00"))).statusCode());
         assertEquals(400, enviar(post("/pedidos", null, CUERPO)).statusCode());
         assertEquals(400, enviar(post("/pedidos", "invalido", CUERPO.replace("4.50", "-1"))).statusCode());
@@ -178,6 +191,36 @@ class IntegracionPedidosTest {
             registroPagos.rebind(ServicioPagos.NOMBRE, stubPagos);
         }
         assertEquals(200, enviar(post("/pedidos/" + id + "/reintentar", null, "")).statusCode());
+    }
+
+    @Test
+    void cocinaNoDisponibleDevuelve202YSeRecuperaSinDuplicar() throws Exception {
+        registroCocina.unbind(ServicioCocina.NOMBRE);
+        String id;
+        String pagoId;
+        try {
+            var respuesta = enviar(post("/pedidos", UUID.randomUUID().toString(), CUERPO));
+            assertEquals(202, respuesta.statusCode(), respuesta.body());
+            var pendiente = contenido(respuesta);
+            id = pendiente.get("id").asString();
+            pagoId = pendiente.get("comprobante").get("pagoId").asString();
+            assertEquals("PAGADO", pendiente.get("estadoPago").asString());
+            assertTrue(pendiente.get("ventaRegistrada").asBoolean());
+            assertEquals("PENDIENTE_ENVIO", pendiente.get("estadoPreparacion").asString());
+            assertTrue(cocina.listarPedidos().stream().noneMatch(p -> p.pedido().pedidoId().equals(id)));
+        } finally {
+            registroCocina.rebind(ServicioCocina.NOMBRE, stubCocina);
+        }
+
+        var respuesta = enviar(post("/pedidos/" + id + "/reintentar", null, ""));
+        assertEquals(200, respuesta.statusCode(), respuesta.body());
+        var recuperado = contenido(respuesta);
+        assertEquals(id, recuperado.get("id").asString());
+        assertEquals(pagoId, recuperado.get("comprobante").get("pagoId").asString());
+        assertEquals("RECIBIDO", recuperado.get("estadoPreparacion").asString());
+        assertEquals(1, pagos.listarPagos().stream().filter(p -> p.pedidoId().equals(id)).count());
+        assertEquals(1, admin.listarVentas().stream().filter(v -> v.pedidoId().equals(id)).count());
+        assertEquals(1, cocina.listarPedidos().stream().filter(p -> p.pedido().pedidoId().equals(id)).count());
     }
 
     @Test
