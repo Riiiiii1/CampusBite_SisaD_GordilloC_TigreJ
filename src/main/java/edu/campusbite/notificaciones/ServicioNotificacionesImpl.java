@@ -22,6 +22,7 @@ public class ServicioNotificacionesImpl implements ServicioNotificaciones {
         this.manejador = manejador;
     }
 
+    // Con ayuda de ChatGPT revisé que el mismo evento no se procese dos veces
     @Override
     public void notificarListo(EventoPedidoListo evento)
             throws OperacionRechazadaException {

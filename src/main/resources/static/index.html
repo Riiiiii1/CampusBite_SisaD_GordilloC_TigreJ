@@ -230,6 +230,7 @@
             : "Crear pedido";
     }
 
+    // Revisé con ChatGPT los botones que cambian según el estado del pedido
     function actualizarAcciones(pedido) {
         if (!pedido) {
             botonConsultar.disabled = true;
@@ -359,6 +360,7 @@
         actualizarAcciones(null);
     }
 
+    // Con ayuda de ChatGPT revisé la consulta del estado al volver a la página
     async function consultarEstado(consultaManual = false) {
         if (!pedidoActual) {
             return;
@@ -416,6 +418,7 @@
         }
     }
 
+    // Con ayuda de ChatGPT trabajé la conexión para recibir el aviso cuando el pedido está listo
     function conectarWebSocket() {
         if (!pedidoActual) {
             return;

@@ -107,6 +107,7 @@ public class ApiCocina {
                 + "}";
     }
 
+    // Con ayuda de ChatGPT trabajé la respuesta al marcar un pedido como LISTO
     private void marcarListo(HttpExchange ex) throws IOException {
         agregarCORS(ex);
 

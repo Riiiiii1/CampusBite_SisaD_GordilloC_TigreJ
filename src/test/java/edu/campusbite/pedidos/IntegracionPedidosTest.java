@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.*;
 // --------------------- DAVID ---------
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        // Con ayuda de ChatGPT desactivé Cocina solo para esta prueba
         properties = "campusbite.cocina.habilitada=false"
 )
 @DirtiesContext

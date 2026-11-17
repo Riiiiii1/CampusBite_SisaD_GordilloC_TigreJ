@@ -17,6 +17,12 @@
 
 Utilicé la IA como apoyo para desarrollar y revisar Cocina, Notificaciones, WebSocket y `src/main/resources/static/index.html`. Sin embargo, adapté el código en IDEA, respeté los acuerdos con David y realicé pruebas manuales antes de validar los cambios.
 
+Estos son algunos de los métodos y funciones que trabajé o revisé con ayuda de IA:
+
+- En Cocina: `ServicioCocinaImpl.registrarPedido`, `ServicioCocinaImpl.marcarListo` y `ApiCocina.marcarListo`
+- En Notificaciones: `ServicioNotificacionesImpl.notificarListo` y `NotificacionesWebSocketHandler.enviar`
+- En la página HTML: `actualizarAcciones`, `consultarEstado` y `conectarWebSocket`
+
 ## Reflexión
 
 - **Dónde la IA no aplicaba o se equivocó:** En algunas propuestas modificó el HTML y agregó mensajes que no había solicitado. Tuve que aclarar el comportamiento esperado y revisar los reemplazos antes de aplicarlos.
