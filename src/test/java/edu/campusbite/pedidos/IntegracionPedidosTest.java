@@ -24,7 +24,10 @@ import java.util.concurrent.CompletableFuture;
 import static org.junit.jupiter.api.Assertions.*;
 
 // --------------------- DAVID ---------
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = "campusbite.cocina.habilitada=false"
+)
 @DirtiesContext
 class IntegracionPedidosTest {
     @LocalServerPort int puertoHttp;

@@ -1,6 +1,6 @@
 # ADR-002: Java RMI para la comunicación con Pagos, Facturación y Administración
 
-**Estado:** Propuesto (pendiente de aprobar en grupo)
+**Estado:** Implementado y probado
 **Fecha:** 2026-11-14
 
 ## Contexto

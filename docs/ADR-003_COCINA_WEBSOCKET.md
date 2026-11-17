@@ -1,6 +1,7 @@
 # ADR-003: RMI para Cocina y WebSocket para notificaciones
 
-**Estado:** Implementado y probado; pendiente de revisión del grupo
+**Estado:** Implementado y probado
+
 **Fecha:** 2026-11-15
 
 ## Contexto
