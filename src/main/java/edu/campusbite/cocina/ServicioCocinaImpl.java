@@ -30,6 +30,7 @@ public class ServicioCocinaImpl implements ServicioCocina {
     private final ConcurrentHashMap<String, PedidoEnCocina> pedidos =
             new ConcurrentHashMap<>();
 
+    // Con ayuda de ChatGPT revisé el registro para que un reintento no duplique el pedido
     @Override
     public void registrarPedido(PedidoCocina pedido)
             throws OperacionRechazadaException {
@@ -54,6 +55,7 @@ public class ServicioCocinaImpl implements ServicioCocina {
     /**
      * Marca el pedido como listo en Pedidos antes de solicitar el aviso
      * Si el aviso falla, una neuva llamada reutiliza el mismo evento
+     * Revisé este orden con ayuda de ChatGPT
      */
     public ResultadoListo marcarListo(String pedidoId)
             throws RemoteException, OperacionRechazadaException {

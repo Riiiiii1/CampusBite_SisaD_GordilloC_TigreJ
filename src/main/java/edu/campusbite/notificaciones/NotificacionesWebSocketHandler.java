@@ -77,6 +77,7 @@ public class NotificacionesWebSocketHandler extends TextWebSocketHandler {
 
     /**
      * Envia un evento a los clientes conectados a ese pedido
+     * Revisé este envío con ayuda de ChatGPT
      * @return cantidad de sesiones que recibieron el mensaje
      */
     public int enviar(EventoPedidoListo evento) {
